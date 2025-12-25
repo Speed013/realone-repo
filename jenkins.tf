@@ -1,7 +1,7 @@
 # configured aws provider with proper credentials
 provider "aws" {
   region    = "us-east-1"
-  profile   = "yusuf"
+  profile   = "moyosore"   #change this
 }
 
 
@@ -29,8 +29,8 @@ resource "aws_default_subnet" "default_az1" {
 
 
 # create security group for the ec2 instance
-resource "aws_security_group" "ec2_security_group_jenkins" {
-  name        = "ec2 security group_jenkins"
+resource "aws_security_group" "ec2_security_group4" {
+  name        = "ec2 security group4"
   description = "allow access on ports 8080 and 22"
   vpc_id      = aws_default_vpc.default_vpc.id
 
@@ -43,14 +43,14 @@ resource "aws_security_group" "ec2_security_group_jenkins" {
     cidr_blocks      = ["0.0.0.0/0"]
   }
 
-  # allow access on port 8080
+    # allow access on port 9000
   ingress {
-    description      = "sonar access"
+    description      = "http proxy access"
     from_port        = 9000
     to_port          = 9000
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
-  }  
+  }
 
   # allow access on port 22
   ingress {
@@ -59,7 +59,24 @@ resource "aws_security_group" "ec2_security_group_jenkins" {
     to_port          = 22
     protocol         = "tcp"
     cidr_blocks      = ["0.0.0.0/0"]
+  } 
+  ingress {
+    description      = "http access"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
   }
+
+  
+   ingress {
+    description      = "https access"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
 
   egress {
     from_port        = 0
@@ -67,7 +84,7 @@ resource "aws_security_group" "ec2_security_group_jenkins" {
     protocol         = -1
     cidr_blocks      = ["0.0.0.0/0"]
   }
- 
+
   tags   = {
     Name = "jenkins server security group"
   }
@@ -92,19 +109,20 @@ data "aws_ami" "ubuntu" {
     owners = ["099720109477"]
 }
 
-# launch the ec2 instance and install website
 resource "aws_instance" "ec2_instance" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.2xlarge"
+  instance_type          = "t3.medium"
   subnet_id              = aws_default_subnet.default_az1.id
-  vpc_security_group_ids = [aws_security_group.ec2_security_group_jenkins.id]
-  key_name               = "devopskeypair"
-  availability_zone = "us-east-1a"
-  root_block_device {
-    volume_size = 50  # Size of the root volume (in GB)
-  }  
+  vpc_security_group_ids = [aws_security_group.ec2_security_group4.id]
+  key_name               = "tnk"
+  user_data = "${file("install_jenkins.sh")}"
 
-  # user_data            = file("install_jenkins.sh")
+  # 👇 This ensures each EC2 instance starts with a 20 GB root disk
+  root_block_device {
+    volume_size = 20        # Root disk size in GB
+    volume_type = "gp3"     # Use gp3 (faster and cheaper than gp2)
+  }
+
 
   tags = {
     Name = "jenkins_server"
@@ -112,38 +130,9 @@ resource "aws_instance" "ec2_instance" {
 }
 
 
-# an empty resource block
-resource "null_resource" "name" {
-
-  # ssh into the ec2 instance 
-  connection {
-    type        = "ssh"
-    user        = "ubuntu"
-    private_key = file("~/Downloads/devopskeypair.pem")
-    host        = aws_instance.ec2_instance.public_ip
-  }
-
-  # copy the install_jenkins.sh file from your computer to the ec2 instance 
-  provisioner "file" {
-    source      = "install_jenkins.sh"
-    destination = "/tmp/install_jenkins.sh"
-  }
-
-  # set permissions and run the install_jenkins.sh file
-  provisioner "remote-exec" {
-    inline = [
-        "sudo chmod +x /tmp/install_jenkins.sh",
-        # "sed -i 's/\r$//' /tmp/install_k8s.sh",
-        "sh /tmp/install_jenkins.sh",
-    ]
-  }
-
-  # wait for ec2 to be created
-  depends_on = [aws_instance.ec2_instance]
-}
 
 
 # print the url of the jenkins server
 output "website_url" {
-  value     = join ("", ["http://", aws_instance.ec2_instance.public_dns, ":", "8080"])
+  value     = join("", ["http://", aws_instance.ec2_instance.public_ip, ":", "8080"])
 }
